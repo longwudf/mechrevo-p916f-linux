@@ -26,6 +26,28 @@ The EC field `FTVL` contains the firmware thermal mode. `THMM()` applies the mat
 
 No fan tachometer/control method or battery charge-limit field exists in the captured ACPI tables. Standard `hwmon` fan control and charge thresholds therefore cannot be implemented safely from this firmware revision. Existing generic `acpitz`, `k10temp`, `amdgpu`, ACPI battery and AMD PMF interfaces remain authoritative.
 
+### PIIX4 SMBus quirk
+
+The firmware exposes an empty main SMBus port as `i2c-1`, while all four DDR5
+SPD devices are connected to the auxiliary `i2c-3` port. The generic
+`i2c-piix4` driver probes both port-zero adapters for SPD devices, causing a
+one-time boot timeout on the empty main port before successfully finding the
+four devices on the auxiliary port.
+
+`piix4-quirk/` provides an exact-DMI-scoped DKMS build which skips only the
+invalid main-port SPD probe. It keeps the controller, the other SMBus ports,
+and all four `spd5118` devices enabled:
+
+```sh
+sudo ./piix4-quirk/install.sh
+```
+
+To restore the distribution module:
+
+```sh
+sudo ./piix4-quirk/uninstall.sh
+```
+
 ## Driver status
 
 `mechrevo-p916f-wmi.c` is deliberately read-only with respect to firmware. It:
