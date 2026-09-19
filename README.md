@@ -133,3 +133,10 @@ The proposed upstream codec quirk remains in the companion repository:
 ## License
 
 GPL-2.0-only, matching the Linux kernel.
+
+## P916F custom kernel
+
+An experimental self-contained kernel variant for the touchpad I2C arbitration,
+WLAN ACPI namespace collision, and boot-time primary SMBus timeout is documented
+in [`kernel/README.md`](kernel/README.md).  It uses exact P916F matches and keeps
+the distribution kernel available as a recovery path.

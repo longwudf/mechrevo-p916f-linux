@@ -1,0 +1,78 @@
+--- a/drivers/acpi/acpica/dswload.c
++++ b/drivers/acpi/acpica/dswload.c
+@@ -8,6 +8,7 @@
+  *****************************************************************************/
+ 
+ #include <acpi/acpi.h>
++#include <linux/dmi.h>
+ #include "accommon.h"
+ #include "acparser.h"
+ #include "amlcode.h"
+@@ -21,6 +22,48 @@
+ #define _COMPONENT          ACPI_DISPATCHER
+ ACPI_MODULE_NAME("dswload")
+ 
++/*
++ * P916F firmware defines \\_SB.PCI0.GPP6.WLAN._DSM in the DSDT and then
++ * deliberately supplies the platform WLAN power policy in a later SSDT using
++ * the same name. ACPICA normally rejects the second method and consequently
++ * drops the intended D3cold policy. Permit an override only for this exact
++ * namespace node on this exact board.
++ */
++static const struct dmi_system_id p916f_wlan_dsm_dmi[] = {
++	{
++		.ident = "MECHREVO P916F",
++		.matches = {
++			DMI_EXACT_MATCH(DMI_SYS_VENDOR, "MECHREVO"),
++			DMI_EXACT_MATCH(DMI_PRODUCT_NAME, "XINGYAO Series"),
++			DMI_EXACT_MATCH(DMI_BOARD_NAME,
++					"XINGYAO Series-P916F-HPT-R"),
++		},
++	},
++	{ }
++};
++
++static bool acpi_p916f_wlan_dsm_node(struct acpi_namespace_node *node)
++{
++	static int is_p916f = -1;
++	static const char * const names[] = {
++		"_DSM", "WLAN", "GPP6", "PCI0", "_SB_"
++	};
++	int i;
++
++	if (is_p916f < 0)
++		is_p916f = dmi_check_system(p916f_wlan_dsm_dmi);
++	if (!is_p916f)
++		return false;
++
++	for (i = 0; i < ARRAY_SIZE(names); i++) {
++		if (!node || !ACPI_COMPARE_NAMESEG(node->name.ascii, names[i]))
++			return false;
++		node = node->parent;
++	}
++
++	return true;
++}
++
+ /*******************************************************************************
+  *
+  * FUNCTION:    acpi_ds_init_callbacks
+@@ -313,7 +356,17 @@
+ 
+ 				/* The name already exists in this scope */
+ 
+-				if (node->flags & ANOBJ_IS_EXTERNAL) {
++				if (object_type == ACPI_TYPE_METHOD &&
++				    acpi_p916f_wlan_dsm_node(node)) {
++					status = acpi_ns_lookup(walk_state->scope_info,
++							path, object_type,
++							ACPI_IMODE_LOAD_PASS1,
++							(flags & ~ACPI_NS_ERROR_IF_FOUND) |
++							ACPI_NS_OVERRIDE_IF_FOUND,
++							walk_state, &node);
++					if (ACPI_SUCCESS(status))
++						ACPI_INFO(("P916F: applied WLAN SSDT _DSM override"));
++				} else if (node->flags & ANOBJ_IS_EXTERNAL) {
+ 					/*
+ 					 * Allow one create on an object or segment that was
+ 					 * previously declared External

@@ -1,0 +1,30 @@
+--- a/drivers/i2c/busses/i2c-piix4.c
++++ b/drivers/i2c/busses/i2c-piix4.c
+@@ -910,6 +910,18 @@
+ static struct i2c_adapter *piix4_aux_adapter;
+ static int piix4_adapter_count;
+ 
++/*
++ * The P916F exposes an unusable primary SMBus port.  Probing it as an SPD
++ * write-enable controller times out once during boot; the real DIMM SPD EEPROMs
++ * are on the auxiliary port and remain available.
++ */
++static bool piix4_skip_main_spd_probe(void)
++{
++	return dmi_match(DMI_SYS_VENDOR, "MECHREVO") &&
++		dmi_match(DMI_PRODUCT_NAME, "XINGYAO Series") &&
++		dmi_match(DMI_BOARD_NAME, "XINGYAO Series-P916F-HPT-R");
++}
++
+ static int piix4_add_adapter(struct pci_dev *dev, unsigned short smba,
+ 			     bool sb800_main, u8 port, bool notify_imc,
+ 			     u8 hw_port_nr, const char *name,
+@@ -970,7 +982,7 @@
+ 	 * devices present and all reads return "0".
+ 	 * This would allow the ee1004 to be probed incorrectly.
+ 	 */
+-	if (port == 0)
++	if (port == 0 && !(sb800_main && piix4_skip_main_spd_probe()))
+ 		i2c_register_spd_write_enable(adap);
+ 
+ 	*padap = adap;

@@ -1,0 +1,43 @@
+--- a/drivers/i2c/busses/i2c-designware-platdrv.c
++++ b/drivers/i2c/busses/i2c-designware-platdrv.c
+@@ -86,6 +86,27 @@
+ 	{ } /* terminate list */
+ };
+ 
++/*
++ * The P916F firmware shares AMDI0010:01 with the AMD PSP but describes the
++ * controller with the older AMDI0010 ID.  Without the PSP semaphore Linux and
++ * firmware occasionally drive the bus at the same time, which is reported as
++ * "controller timed out" / "lost arbitration" by the touchpad controller.
++ * Keep this narrowly DMI-scoped: other AMDI0010 systems are not necessarily
++ * wired to the PSP.
++ */
++static const struct dmi_system_id p916f_amdpsp_i2c_dmi[] = {
++	{
++		.ident = "MECHREVO P916F",
++		.matches = {
++			DMI_EXACT_MATCH(DMI_SYS_VENDOR, "MECHREVO"),
++			DMI_EXACT_MATCH(DMI_PRODUCT_NAME, "XINGYAO Series"),
++			DMI_EXACT_MATCH(DMI_BOARD_NAME,
++					"XINGYAO Series-P916F-HPT-R"),
++		},
++	},
++	{ }
++};
++
+ static const struct i2c_dw_semaphore_callbacks i2c_dw_semaphore_cb_table[] = {
+ #ifdef CONFIG_I2C_DESIGNWARE_BAYTRAIL
+ 	{
+@@ -154,6 +175,12 @@
+ 	dev->dev = device;
+ 	dev->irq = irq;
+ 	dev->flags = flags;
++	if (has_acpi_companion(device) &&
++	    acpi_dev_hid_uid_match(ACPI_COMPANION(device), "AMDI0010", "1") &&
++	    dmi_check_system(p916f_amdpsp_i2c_dmi)) {
++		dev->flags |= ARBITRATION_SEMAPHORE;
++		dev_info(device, "P916F: enabling AMD PSP I2C arbitration semaphore\n");
++	}
+ 	platform_set_drvdata(pdev, dev);
+ 
+ 	ret = dw_i2c_plat_request_regs(dev);
