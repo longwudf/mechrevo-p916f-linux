@@ -1,5 +1,5 @@
-From 4c35db59d3fb867eb8bd772045ecad350dd1dbc4 Mon Sep 17 00:00:00 2001
-From: longwudf <longwudf@gmail.com>
+From c2723e96240d94719d504d564c69e4b68fc35325 Mon Sep 17 00:00:00 2001
+From: chenghao <longwudf@gmail.com>
 Date: Sat, 19 Sep 2026 22:00:58 +0800
 Subject: [PATCH] platform/x86: Add MECHREVO P916F WMI hotkey driver
 
@@ -14,7 +14,7 @@ backlight, touchpad and performance-mode notifications. Avoid all
 firmware writes because no safe control ABI is exposed by the captured
 ACPI tables. Also prevent huawei-wmi from probing this exact machine.
 
-Signed-off-by: longwudf <longwudf@gmail.com>
+Signed-off-by: chenghao <longwudf@gmail.com>
 ---
  drivers/platform/x86/Kconfig              |  12 +++
  drivers/platform/x86/Makefile             |   1 +
@@ -94,7 +94,7 @@ index d6aaf14..96cc3a5 100644
  		return -ENOMEM;
 diff --git a/drivers/platform/x86/mechrevo-p916f-wmi.c b/drivers/platform/x86/mechrevo-p916f-wmi.c
 new file mode 100644
-index 0000000..cd252fb
+index 0000000..6414fcd
 --- /dev/null
 +++ b/drivers/platform/x86/mechrevo-p916f-wmi.c
 @@ -0,0 +1,124 @@
@@ -219,7 +219,7 @@ index 0000000..cd252fb
 +};
 +module_wmi_driver(p916f_wmi_driver);
 +
-+MODULE_AUTHOR("longwudf <longwudf@gmail.com>");
++MODULE_AUTHOR("chenghao <longwudf@gmail.com>");
 +MODULE_DESCRIPTION("MECHREVO XINGYAO P916F WMI hotkey driver");
 +MODULE_LICENSE("GPL");
 -- 

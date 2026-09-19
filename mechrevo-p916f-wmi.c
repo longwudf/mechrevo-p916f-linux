@@ -119,6 +119,6 @@ static struct wmi_driver p916f_wmi_driver = {
 };
 module_wmi_driver(p916f_wmi_driver);
 
-MODULE_AUTHOR("longwudf <longwudf@gmail.com>");
+MODULE_AUTHOR("chenghao <longwudf@gmail.com>");
 MODULE_DESCRIPTION("MECHREVO XINGYAO P916F WMI hotkey driver");
 MODULE_LICENSE("GPL");
