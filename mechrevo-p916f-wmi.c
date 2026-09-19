@@ -11,7 +11,6 @@
 #include <linux/input.h>
 #include <linux/input/sparse-keymap.h>
 #include <linux/module.h>
-#include <linux/unaligned.h>
 #include <linux/wmi.h>
 
 #define P916F_EVENT_GUID "ABBC0F5C-8EA1-11D1-A000-C90629100000"
@@ -34,42 +33,35 @@ static const struct dmi_system_id p916f_dmi_table[] = {
 };
 MODULE_DEVICE_TABLE(dmi, p916f_dmi_table);
 
-/* Codes already emitted through the shared event GUID on this firmware. */
+/* Event values assigned to WMEN by the P916F DSDT EC query methods. */
 static const struct key_entry p916f_keymap[] = {
-	{ KE_KEY, 0x281, { KEY_BRIGHTNESSDOWN } },
-	{ KE_KEY, 0x282, { KEY_BRIGHTNESSUP } },
-	{ KE_KEY, 0x284, { KEY_MUTE } },
-	{ KE_KEY, 0x285, { KEY_VOLUMEDOWN } },
-	{ KE_KEY, 0x286, { KEY_VOLUMEUP } },
-	{ KE_KEY, 0x287, { KEY_MICMUTE } },
-	{ KE_KEY, 0x289, { KEY_WLAN } },
-	{ KE_KEY, 0x28a, { KEY_PROG1 } },
-	{ KE_KEY, 0x28e, { KEY_PRINT } },
-	{ KE_KEY, 0x293, { KEY_KBDILLUMTOGGLE } },
-	{ KE_KEY, 0x294, { KEY_KBDILLUMDOWN } },
-	{ KE_KEY, 0x295, { KEY_KBDILLUMUP } },
+	{ KE_KEY, 0x20, { KEY_KBDILLUMDOWN } }, /* backlight off */
+	{ KE_KEY, 0x21, { KEY_KBDILLUMUP } },   /* backlight level 1 */
+	{ KE_KEY, 0x22, { KEY_KBDILLUMUP } },   /* backlight level 2 */
+	{ KE_KEY, 0x30, { KEY_TOUCHPAD_OFF } },
+	{ KE_KEY, 0x31, { KEY_TOUCHPAD_ON } },
+	{ KE_KEY, 0x41, { KEY_PROG1 } },        /* balanced profile */
+	{ KE_KEY, 0x42, { KEY_PROG1 } },        /* performance profile */
 	{ KE_END, 0 }
 };
 
-static void p916f_wmi_notify(struct wmi_device *wdev,
-			     const struct wmi_buffer *data)
+static void p916f_wmi_notify(struct wmi_device *wdev, union acpi_object *obj)
 {
 	struct p916f_wmi *priv = dev_get_drvdata(&wdev->dev);
 	const struct key_entry *key;
 	u32 code;
 
-	if (!data || data->length < sizeof(u32)) {
+	if (!obj || obj->type != ACPI_TYPE_INTEGER) {
 		dev_warn_ratelimited(&wdev->dev,
-				     "event payload is missing or too short\n");
+				     "event payload is not an ACPI integer\n");
 		return;
 	}
 
-	code = get_unaligned_le32(data->data);
+	code = obj->integer.value;
 	key = sparse_keymap_entry_from_scancode(priv->input, code);
 	if (!key) {
 		dev_info_ratelimited(&wdev->dev,
-				     "unknown hotkey event 0x%08x (length %zu)\n",
-				     code, data->length);
+				     "unknown hotkey event 0x%08x\n", code);
 		return;
 	}
 
@@ -123,7 +115,7 @@ static struct wmi_driver p916f_wmi_driver = {
 	},
 	.id_table = p916f_wmi_id_table,
 	.probe = p916f_wmi_probe,
-	.notify_new = p916f_wmi_notify,
+	.notify = p916f_wmi_notify,
 };
 module_wmi_driver(p916f_wmi_driver);
 
