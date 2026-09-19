@@ -19,14 +19,10 @@ out="p916f-firmware-capture"
 rm -rf "$out"
 mkdir -p "$out/acpi" "$out/wmi"
 
-acpidump -b -z -o "$out/acpi/acpidump.dat"
-acpixtract -a "$out/acpi/acpidump.dat"
-for table in dsdt.dat ssdt*.dat; do
-	[ -f "$table" ] || continue
-	mv "$table" "$out/acpi/"
-done
+acpidump -o "$out/acpi/acpidump.txt"
 (
 	cd "$out/acpi"
+	acpixtract -a acpidump.txt
 	iasl -e ssdt*.dat -d dsdt.dat 2>iasl-errors.txt || true
 )
 
@@ -43,4 +39,3 @@ cp /sys/class/dmi/id/{sys_vendor,product_name,product_version,board_vendor,board
 dmesg > "$out/dmesg.txt"
 tar -czf "$out.tar.gz" "$out"
 echo "Created $out.tar.gz"
-
