@@ -1,0 +1,227 @@
+From 4c35db59d3fb867eb8bd772045ecad350dd1dbc4 Mon Sep 17 00:00:00 2001
+From: longwudf <longwudf@gmail.com>
+Date: Sat, 19 Sep 2026 22:00:58 +0800
+Subject: [PATCH] platform/x86: Add MECHREVO P916F WMI hotkey driver
+
+The MECHREVO XINGYAO P916F firmware reuses Huawei WMI GUIDs, but
+implements an incompatible ABI. In particular, WMAA accepts one argument
+and returns an integer event code, while huawei-wmi calls the method with
+three arguments for device controls. This causes ACPI errors and leaves
+the vendor hotkeys unsupported.
+
+Add an exact DMI-scoped, event-only driver for the confirmed keyboard
+backlight, touchpad and performance-mode notifications. Avoid all
+firmware writes because no safe control ABI is exposed by the captured
+ACPI tables. Also prevent huawei-wmi from probing this exact machine.
+
+Signed-off-by: longwudf <longwudf@gmail.com>
+---
+ drivers/platform/x86/Kconfig              |  12 +++
+ drivers/platform/x86/Makefile             |   1 +
+ drivers/platform/x86/huawei-wmi.c         |  16 +++
+ drivers/platform/x86/mechrevo-p916f-wmi.c | 124 ++++++++++++++++++++++
+ 4 files changed, 153 insertions(+)
+ create mode 100644 drivers/platform/x86/mechrevo-p916f-wmi.c
+
+diff --git a/drivers/platform/x86/Kconfig b/drivers/platform/x86/Kconfig
+index 957034f..ee7fb00 100644
+--- a/drivers/platform/x86/Kconfig
++++ b/drivers/platform/x86/Kconfig
+@@ -44,6 +44,18 @@ config HUAWEI_WMI
+ 	  To compile this driver as a module, choose M here: the module
+ 	  will be called huawei-wmi.
+ 
++config MECHREVO_P916F_WMI
++	tristate "MECHREVO P916F WMI hotkey driver"
++	depends on ACPI_WMI
++	depends on INPUT
++	select INPUT_SPARSEKMAP
++	help
++	  This driver provides support for the keyboard backlight, touchpad and
++	  performance-mode hotkeys on the MECHREVO XINGYAO P916F laptop.
++
++	  To compile this driver as a module, choose M here: the module will be
++	  called mechrevo-p916f-wmi.
++
+ source "drivers/platform/x86/uniwill/Kconfig"
+ 
+ config UV_SYSFS
+diff --git a/drivers/platform/x86/Makefile b/drivers/platform/x86/Makefile
+index 872ac38..83e7036 100644
+--- a/drivers/platform/x86/Makefile
++++ b/drivers/platform/x86/Makefile
+@@ -9,6 +9,7 @@ obj-$(CONFIG_WMI_BMOF)		+= wmi-bmof.o
+ 
+ # WMI drivers
+ obj-$(CONFIG_HUAWEI_WMI)		+= huawei-wmi.o
++obj-$(CONFIG_MECHREVO_P916F_WMI)	+= mechrevo-p916f-wmi.o
+ obj-$(CONFIG_MXM_WMI)			+= mxm-wmi.o
+ obj-$(CONFIG_NVIDIA_WMI_EC_BACKLIGHT)	+= nvidia-wmi-ec-backlight.o
+ obj-$(CONFIG_XIAOMI_WMI)		+= xiaomi-wmi.o
+diff --git a/drivers/platform/x86/huawei-wmi.c b/drivers/platform/x86/huawei-wmi.c
+index d6aaf14..96cc3a5 100644
+--- a/drivers/platform/x86/huawei-wmi.c
++++ b/drivers/platform/x86/huawei-wmi.c
+@@ -147,6 +147,18 @@ static const struct dmi_system_id huawei_quirks[] = {
+ 	{  }
+ };
+ 
++static const struct dmi_system_id huawei_wmi_blacklist[] = {
++	{
++		.matches = {
++			DMI_EXACT_MATCH(DMI_SYS_VENDOR, "MECHREVO"),
++			DMI_EXACT_MATCH(DMI_PRODUCT_NAME, "XINGYAO Series"),
++			DMI_EXACT_MATCH(DMI_BOARD_NAME,
++					"XINGYAO Series-P916F-HPT-R"),
++		},
++	},
++	{}
++};
++
+ /* Utils */
+ 
+ static int huawei_wmi_call(struct huawei_wmi *huawei,
+@@ -953,6 +965,10 @@ static __init int huawei_wmi_init(void)
+ 	struct platform_device *pdev;
+ 	int err;
+ 
++	/* This model reuses the Huawei GUIDs with an incompatible ACPI ABI. */
++	if (dmi_check_system(huawei_wmi_blacklist))
++		return -ENODEV;
++
+ 	huawei_wmi = kzalloc_obj(struct huawei_wmi);
+ 	if (!huawei_wmi)
+ 		return -ENOMEM;
+diff --git a/drivers/platform/x86/mechrevo-p916f-wmi.c b/drivers/platform/x86/mechrevo-p916f-wmi.c
+new file mode 100644
+index 0000000..cd252fb
+--- /dev/null
++++ b/drivers/platform/x86/mechrevo-p916f-wmi.c
+@@ -0,0 +1,124 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * WMI hotkey driver for the MECHREVO XINGYAO P916F.
++ *
++ * This machine reuses Huawei WMI GUIDs with an incompatible ACPI ABI.
++ * Keep this driver strictly DMI-scoped and avoid firmware writes until the
++ * platform method contract has been decoded from its ACPI tables.
++ */
++
++#include <linux/dmi.h>
++#include <linux/input.h>
++#include <linux/input/sparse-keymap.h>
++#include <linux/module.h>
++#include <linux/wmi.h>
++
++#define P916F_EVENT_GUID "ABBC0F5C-8EA1-11D1-A000-C90629100000"
++
++struct p916f_wmi {
++	struct input_dev *input;
++};
++
++static const struct dmi_system_id p916f_dmi_table[] = {
++	{
++		.ident = "MECHREVO XINGYAO Series-P916F-HPT-R",
++		.matches = {
++			DMI_EXACT_MATCH(DMI_SYS_VENDOR, "MECHREVO"),
++			DMI_EXACT_MATCH(DMI_PRODUCT_NAME, "XINGYAO Series"),
++			DMI_EXACT_MATCH(DMI_BOARD_NAME,
++					"XINGYAO Series-P916F-HPT-R"),
++		},
++	},
++	{}
++};
++MODULE_DEVICE_TABLE(dmi, p916f_dmi_table);
++
++/* Event values assigned to WMEN by the P916F DSDT EC query methods. */
++static const struct key_entry p916f_keymap[] = {
++	{ KE_KEY, 0x20, { KEY_KBDILLUMDOWN } }, /* backlight off */
++	{ KE_KEY, 0x21, { KEY_KBDILLUMUP } },   /* backlight level 1 */
++	{ KE_KEY, 0x22, { KEY_KBDILLUMUP } },   /* backlight level 2 */
++	{ KE_KEY, 0x30, { KEY_TOUCHPAD_OFF } },
++	{ KE_KEY, 0x31, { KEY_TOUCHPAD_ON } },
++	{ KE_KEY, 0x41, { KEY_PROG1 } },        /* balanced profile */
++	{ KE_KEY, 0x42, { KEY_PROG1 } },        /* performance profile */
++	{ KE_END, 0 }
++};
++
++static void p916f_wmi_notify(struct wmi_device *wdev, union acpi_object *obj)
++{
++	struct p916f_wmi *priv = dev_get_drvdata(&wdev->dev);
++	const struct key_entry *key;
++	u32 code;
++
++	if (!obj || obj->type != ACPI_TYPE_INTEGER) {
++		dev_warn_ratelimited(&wdev->dev,
++				     "event payload is not an ACPI integer\n");
++		return;
++	}
++
++	code = obj->integer.value;
++	key = sparse_keymap_entry_from_scancode(priv->input, code);
++	if (!key) {
++		dev_info_ratelimited(&wdev->dev,
++				     "unknown hotkey event 0x%08x\n", code);
++		return;
++	}
++
++	sparse_keymap_report_entry(priv->input, key, 1, true);
++}
++
++static int p916f_wmi_probe(struct wmi_device *wdev, const void *context)
++{
++	struct device *dev = &wdev->dev;
++	struct p916f_wmi *priv;
++	int ret;
++
++	if (!dmi_check_system(p916f_dmi_table))
++		return -ENODEV;
++
++	priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
++	if (!priv)
++		return -ENOMEM;
++
++	priv->input = devm_input_allocate_device(dev);
++	if (!priv->input)
++		return -ENOMEM;
++
++	priv->input->name = "MECHREVO P916F hotkeys";
++	priv->input->phys = "wmi/input0";
++	priv->input->id.bustype = BUS_HOST;
++
++	ret = sparse_keymap_setup(priv->input, p916f_keymap, NULL);
++	if (ret)
++		return ret;
++
++	ret = input_register_device(priv->input);
++	if (ret)
++		return ret;
++
++	dev_set_drvdata(dev, priv);
++	dev_info(dev, "registered safe event-only support\n");
++	return 0;
++}
++
++static const struct wmi_device_id p916f_wmi_id_table[] = {
++	{ P916F_EVENT_GUID, NULL },
++	{}
++};
++MODULE_DEVICE_TABLE(wmi, p916f_wmi_id_table);
++
++static struct wmi_driver p916f_wmi_driver = {
++	.driver = {
++		.name = "mechrevo-p916f-wmi",
++		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
++	},
++	.id_table = p916f_wmi_id_table,
++	.probe = p916f_wmi_probe,
++	.notify = p916f_wmi_notify,
++};
++module_wmi_driver(p916f_wmi_driver);
++
++MODULE_AUTHOR("longwudf <longwudf@gmail.com>");
++MODULE_DESCRIPTION("MECHREVO XINGYAO P916F WMI hotkey driver");
++MODULE_LICENSE("GPL");
+-- 
+2.43.0
+
